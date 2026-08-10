@@ -26,7 +26,7 @@ export const RegisterRepository = async (data: UserRegistrationSchema) => {
         const createdUser = response[0];
 
         // recording in autdit_log 
-        await db.insert(Audit_log).values({
+        const userdata = await db.insert(Audit_log).values({
             user_id: createdUser.id,
             entity_id: createdUser.id,
             action: "Account registered successfully",
@@ -39,7 +39,7 @@ export const RegisterRepository = async (data: UserRegistrationSchema) => {
                 registrationSource: "self-service"
             }
         });
-
+        console.log("registered user data:- ", userdata);
         return { message: "Account created successfully", status: 201 }
     } catch (err) {
         console.error(err);
@@ -69,7 +69,9 @@ export const LoginRespository = async (data: UserLoginSchema) => {
         if (!token) {
             return { message: "Failed to generate token, please try again later", status: 500 };
         }
+        console.log("login completed successfully and here is users details:-", user);
         return { message: "Login successful", status: 200, token };
+
     } catch (err) {
         console.error(err);
         throw err;

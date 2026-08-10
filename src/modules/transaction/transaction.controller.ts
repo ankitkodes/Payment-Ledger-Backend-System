@@ -39,11 +39,19 @@ export const DepositMoney = asyncHander(async (req: { body: string; }, res: any)
 })
 
 
-export const CreditMoney = asyncHander(async (req: { body: string; params: { accountNo: number } }, res: any) => {
+export const CreditMoney = asyncHander(async (req: { body: { amount: string }; params: { accountNo: string } }, res: any) => {
 
     const { accountNo } = req.params;
-    const amount = req.body;
-    const result = await CreditMoneyService({ accountNo, amount });
-    return res.status(result.status).json({ message: result.message })
+    const { amount } = req.body;
 
-})
+    if (!accountNo || isNaN(Number(accountNo))) {
+        throw new ValidationError("Invalid account number");
+    }
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+        throw new ValidationError("Amount must be a positive number");
+    }
+
+    const result = await CreditMoneyService({ accountNo: Number(accountNo), amount });
+    return res.status(result.status).json({ message: result.message });
+
+});

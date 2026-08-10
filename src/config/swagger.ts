@@ -421,6 +421,51 @@ const swaggerDocument = {
             }
         },
 
+        '/account/{accountId}/statement': {
+            get: {
+                tags: ['Account'],
+                summary: 'Get transaction history / statement',
+                description: 'Fetches transaction history for a specific bank account by account UUID. Requires authentication.',
+                security: [{ BearerAuth: [] }],
+                parameters: [
+                    {
+                        name: 'accountId',
+                        in: 'path',
+                        required: true,
+                        schema: { type: 'string', format: 'uuid' },
+                        description: 'Account UUID'
+                    }
+                ],
+                responses: {
+                    '200': {
+                        description: 'Transaction history returned',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        message: { type: 'string' },
+                                        transactions: {
+                                            type: 'array',
+                                            items: { type: 'object' }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    '401': {
+                        description: 'Unauthorized',
+                        content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+                    },
+                    '500': {
+                        description: 'Server error',
+                        content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+                    }
+                }
+            }
+        },
+
         '/account/account/{userId}': {
             get: {
                 tags: ['Account'],
@@ -607,10 +652,10 @@ const swaggerDocument = {
             }
         },
 
-        '/transaction/credit/{accountNo}': {
+        '/transaction/withdraw/{accountNo}': {
             post: {
                 tags: ['Transaction'],
-                summary: 'Withdraw (credit) money from account',
+                summary: 'Withdraw money from account',
                 description: 'Withdraws money from a bank account. Minimum withdrawal amount is ₹500. Checks for sufficient balance before processing.',
                 security: [{ BearerAuth: [] }],
                 parameters: [

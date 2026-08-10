@@ -30,7 +30,7 @@ export const RegisterRepository = (data) => __awaiter(void 0, void 0, void 0, fu
         const response = yield db.select().from(User).where(eq(User.phoneNo, data.phoneNo));
         const createdUser = response[0];
         // recording in autdit_log 
-        yield db.insert(Audit_log).values({
+        const userdata = yield db.insert(Audit_log).values({
             user_id: createdUser.id,
             entity_id: createdUser.id,
             action: "Account registered successfully",
@@ -43,6 +43,7 @@ export const RegisterRepository = (data) => __awaiter(void 0, void 0, void 0, fu
                 registrationSource: "self-service"
             }
         });
+        console.log("registered user data:- ", userdata);
         return { message: "Account created successfully", status: 201 };
     }
     catch (err) {
@@ -69,6 +70,7 @@ export const LoginRespository = (data) => __awaiter(void 0, void 0, void 0, func
         if (!token) {
             return { message: "Failed to generate token, please try again later", status: 500 };
         }
+        console.log("login completed successfully and here is users details:-", user);
         return { message: "Login successful", status: 200, token };
     }
     catch (err) {
