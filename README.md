@@ -246,6 +246,7 @@ All endpoints except Register and Login require a JWT Bearer token in the `Autho
 |--------|------|:----:|-------------|
 | `POST` | `/create/:userId` | ✓ | Open a new bank account (Saving / Current / Salary) |
 | `GET` | `/accountDetails/:accountId` | ✓ | Get single account details |
+| `GET` | `/:accountId/statement` | ✓ | Retrieve transaction history for an account |
 | `GET` | `/account/:userId` | ✓ | List all accounts for a user |
 | `DELETE` | `/deleteAccount/:accountId` | ✓ | Close an account |
 
@@ -261,13 +262,13 @@ All endpoints except Register and Login require a JWT Bearer token in the `Autho
 
 | Method | Path | Auth | Description |
 |--------|------|:----:|-------------|
-| `POST` | `/send` | ✓ | P2P transfer between accounts (3% platform fee deducted) |
+| `POST` | `/send/:senderAccountNo/:receiverAccountNo` | ✓ | P2P transfer between accounts with a 3% platform fee deducted |
 | `POST` | `/deposit` | ✓ | Deposit money into an account (minimum ₹500) |
-| `POST` | `/credit` | ✓ | Withdraw money from an account (minimum ₹500) |
+| `POST` | `/withdraw/:accountNo` | ✓ | Withdraw money from an account (minimum ₹500) |
 
 **P2P transfer flow:**
-1. Validate both sender and receiver accounts exist
-2. Check sender has sufficient balance
+1. Validate both sender and receiver accounts exist.
+2. Check sender has sufficient balance.
 3. Within a single DB transaction:
    - Create a `Transaction` record
    - Insert `Debit` ledger entry for the sender
