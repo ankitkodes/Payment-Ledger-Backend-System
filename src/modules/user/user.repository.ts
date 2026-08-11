@@ -80,7 +80,12 @@ export const LoginRespository = async (data: UserLoginSchema) => {
 
 export const ProfileRepository = async (userId: string) => {
     try {
-        const userDetails = await db.select().from(User).where(eq(User.id, userId));
+        const userDetails = await db.select({
+            name: User.name,
+            address: User.address,
+            PhoneNo: User.phoneNo,
+            email: User.phoneNo
+        }).from(User).where(eq(User.id, userId));
         return { message: "Profile returned successfully", status: 200, user: userDetails[0] };
     } catch (err) {
         console.log(err);

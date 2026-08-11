@@ -3,10 +3,10 @@ import { InvalidTokenError } from "../../errors/auth/InvalidTokenError.js";
 import { UnauthorizedError } from "../../errors/auth/UnauthorizedError.js";
 
 export const authenticate = (req: any, res: any, next: any) => {
-    const authHeader = req.headers.authorization;
+    const authHeader = req.headers?.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        throw new UnauthorizedError();
+        return next(new UnauthorizedError());
     }
 
     const token = authHeader.split(" ")[1];
@@ -16,12 +16,11 @@ export const authenticate = (req: any, res: any, next: any) => {
         return res.status(500).json({ message: "authentication secret not configured" });
     }
 
-    jwt.verify(token, secret, (err: any, user: any) => {
-        if (err) {
-            throw new InvalidTokenError();
-        }
-
+    try {
+        const user = jwt.verify(token, secret);
         req.user = user;
         next();
-    });
+    } catch (err) {
+        next(new InvalidTokenError());
+    }
 };

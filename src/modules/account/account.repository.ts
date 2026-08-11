@@ -55,7 +55,12 @@ export const CreateAccountRepository = async (data: AccountRegisterSchema, userI
 
 export const GetAccountDetailsRepository = async (accountId: string) => {
     try {
-        const accountdetails = await db.select().from(Account).where(eq(Account.id, accountId));
+        const accountdetails = await db.select({
+            AccountNo: Account.accountNo,
+            AccountType: Account.category,
+            Balance: Account.balance,
+            user_id: Account.user_id
+        }).from(Account).where(eq(Account.id, accountId));
         if (accountdetails.length < 1) {
             throw new AccountNotFoundError(accountId);
         }
