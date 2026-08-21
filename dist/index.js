@@ -1,21 +1,5 @@
-import 'dotenv/config';
-import express from "express";
-import { UserRoutes } from "./modules/user/user.routes.js";
-import { AccountRoutes } from './modules/account/account.routes.js';
-import { transactionRoutes } from './modules/transaction/transaction.routes.js';
-import { swaggerRouter } from './config/swagger.js';
-import { notFoundHandler } from './shared/middleware/notFoundHandler.js';
-import { globalErrorHanlder } from './shared/middleware/globalErrorHandler.js';
+import { app } from "./app.js";
 const port = process.env.PORT || 4000;
-const app = express();
-app.use(express.json());
-app.use("/api-docs", swaggerRouter);
-app.use("/api/user", UserRoutes);
-app.use("/api/account", AccountRoutes);
-app.use("/api/transaction", transactionRoutes);
-// global Error handler
-app.use(notFoundHandler);
-app.use(globalErrorHanlder);
 app.listen(port, () => {
     console.log(`running port on ${port}`);
 });

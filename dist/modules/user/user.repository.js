@@ -80,7 +80,12 @@ export const LoginRespository = (data) => __awaiter(void 0, void 0, void 0, func
 });
 export const ProfileRepository = (userId) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const userDetails = yield db.select().from(User).where(eq(User.id, userId));
+        const userDetails = yield db.select({
+            name: User.name,
+            address: User.address,
+            PhoneNo: User.phoneNo,
+            email: User.phoneNo
+        }).from(User).where(eq(User.id, userId));
         return { message: "Profile returned successfully", status: 200, user: userDetails[0] };
     }
     catch (err) {

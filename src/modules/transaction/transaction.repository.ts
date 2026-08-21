@@ -44,6 +44,17 @@ export const SendMoneyRespository = async ({ senderAccountNo, receiverAccountNo,
             }
             const receiver = receiverResults[0];
 
+            const platformAccountResults = await tsx
+                .select()
+                .from(Account)
+                .where(eq(Account.id, platform_account_id))
+                .for('update');
+
+            if (platformAccountResults.length < 1) {
+                throw new AccountNotFoundError(platform_account_id);
+            }
+
+            const platformAccount = platformAccountResults[0];
             const senderBalance = Number(sender.balance);
             if (senderBalance < numericAmount) {
                 throw new InsufficientBalanceError();
@@ -105,9 +116,11 @@ export const SendMoneyRespository = async ({ senderAccountNo, receiverAccountNo,
 
             const newReceiverBalance = (Number(receiver.balance) + totalamount).toFixed(2);
             const newSenderBalance = (Number(sender.balance) - numericAmount).toFixed(2);
+            const newPlatformBalance = (Number(platformAccount.balance) + platform_charges).toFixed(2);
 
             await tsx.update(Account).set({ balance: newReceiverBalance }).where(eq(Account.id, receiver.id));
             await tsx.update(Account).set({ balance: newSenderBalance }).where(eq(Account.id, sender.id));
+            await tsx.update(Account).set({ balance: newPlatformBalance }).where(eq(Account.id, platform_account_id));
 
             return { message: "Money transferred successfully", status: 200 };
         });
@@ -119,6 +132,11 @@ export const SendMoneyRespository = async ({ senderAccountNo, receiverAccountNo,
 
 export const DepositMoneyRepository = async (data: DepositMoneyType) => {
     try {
+        const clearing_account_id = process.env.CLEARING_ACCOUNTNO;
+        if (!clearing_account_id) {
+            return { message: "missing clearing account details", status: 403 };
+        }
+
         const numericAmount = Number(data.transaction_amount);
         if (isNaN(numericAmount) || numericAmount <= 0) {
             throw new ValidationError("Amount must be a positive number");
@@ -135,8 +153,20 @@ export const DepositMoneyRepository = async (data: DepositMoneyType) => {
                 throw new AccountNotFoundError(data.sender_account_id);
             }
 
+            const ClearingAccountDetails = await tsx
+                .select()
+                .from(Account)
+                .where(eq(Account.id, clearing_account_id))
+                .for('update');
+
+            if (ClearingAccountDetails.length < 1) {
+                throw new AccountNotFoundError(clearing_account_id);
+            }
+
             const currentBalance = Number(isAccount[0].balance);
+            const currentClearingBalance = Number(ClearingAccountDetails[0].balance);
             const totalamount = (currentBalance + numericAmount).toFixed(2);
+            const newClearingBalance = (currentClearingBalance - numericAmount).toFixed(2);
 
             const [depositTransaction] = await tsx.insert(Transaction).values({
                 transaction_amount: numericAmount.toFixed(2),
@@ -160,12 +190,26 @@ export const DepositMoneyRepository = async (data: DepositMoneyType) => {
                 }
             });
 
+            // maintaing amount deposit in the bank account via bank khatabook
+            await tsx.insert(LedgerSystem).values({
+                account_id: clearing_account_id,
+                transaction_id: depositTransaction.id,
+                type: "Debit",
+                amount: numericAmount.toFixed(2)
+            })
+
+            // entry of user account deposity details
             await tsx.insert(LedgerSystem).values({
                 account_id: data.sender_account_id,
                 transaction_id: depositTransaction.id,
                 type: "Credit",
                 amount: numericAmount.toFixed(2)
             });
+
+            // updating clearing account balance
+            await tsx.update(Account).set({
+                balance: newClearingBalance
+            }).where(eq(Account.id, clearing_account_id));
 
             await tsx.update(Account).set({
                 balance: totalamount
@@ -181,6 +225,11 @@ export const DepositMoneyRepository = async (data: DepositMoneyType) => {
 
 export const CreditMoneyRepository = async ({ accountNo, amount }: CreditMoneySchema) => {
     try {
+
+        const clearing_account_id = process.env.CLEARING_ACCOUNTNO;
+        if (!clearing_account_id) {
+            return { message: "missing clearing account details", status: 403 };
+        }
         const numericAmount = Number(amount);
         if (isNaN(numericAmount) || numericAmount <= 0) {
             throw new ValidationError("Amount must be a positive number");
@@ -202,6 +251,19 @@ export const CreditMoneyRepository = async ({ accountNo, amount }: CreditMoneySc
                 throw new InsufficientBalanceError();
             }
 
+            const ClearingAccountDetails = await tsx
+                .select()
+                .from(Account)
+                .where(eq(Account.id, clearing_account_id))
+                .for('update');
+
+            if (ClearingAccountDetails.length < 1) {
+                throw new AccountNotFoundError(clearing_account_id);
+            }
+
+
+            const currentClearingBalance = Number(ClearingAccountDetails[0].balance);
+            const newClearingBalance = (currentClearingBalance + numericAmount).toFixed(2);
             const remainingBalance = (currentBalance - numericAmount).toFixed(2);
 
             const [withdrawTransaction] = await tsx.insert(Transaction).values({
@@ -232,6 +294,13 @@ export const CreditMoneyRepository = async ({ accountNo, amount }: CreditMoneySc
                 type: "Debit",
                 amount: numericAmount.toFixed(2)
             });
+            // maintaing amount deposit in the bank account via bank khatabook
+            await tsx.insert(LedgerSystem).values({
+                account_id: clearing_account_id,
+                transaction_id: withdrawTransaction.id,
+                type: "Debit",
+                amount: numericAmount.toFixed(2)
+            })
 
             await tsx.update(Account).set({
                 balance: remainingBalance

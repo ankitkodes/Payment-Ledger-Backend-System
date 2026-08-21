@@ -12,88 +12,107 @@ import { eq } from "drizzle-orm";
 import { db } from "../../config/db.js";
 import { InsufficientBalanceError } from "../../errors/account/InsufficientBalanceError.js";
 import { AccountNotFoundError } from "../../errors/account/AccountNotFoundError.js";
+import { ValidationError } from "../../errors/validation/ValidationError.js";
 export const SendMoneyRespository = (_a) => __awaiter(void 0, [_a], void 0, function* ({ senderAccountNo, receiverAccountNo, amount }) {
     try {
-        // validating sender Account
-        const IssenderidExist = yield db.select().from(Account).where(eq(Account.accountNo, Number(senderAccountNo)));
-        if (IssenderidExist.length < 1) {
-            throw new AccountNotFoundError(String(senderAccountNo));
-        }
-        // checking amount where transtaction amount should be less than sender balance
-        if (Number(IssenderidExist[0].balance) < Number(amount)) {
-            throw new InsufficientBalanceError();
-        }
-        // validing receiver account
-        const IsreceiverId = yield db.select().from(Account).where(eq(Account.accountNo, Number(receiverAccountNo)));
-        if (IsreceiverId.length < 1) {
-            throw new AccountNotFoundError(String(receiverAccountNo));
-        }
-        // platform account Id
         const platform_account_id = process.env.PLATFORM_ACCOUNTNO;
         if (!platform_account_id) {
             return { message: "missing platform account details", status: 403 };
         }
-        // transaction where the money is tranfer from sender account to receiver account and also being deducted platfrom charges
-        yield db.transaction((tsx) => __awaiter(void 0, void 0, void 0, function* () {
-            const platform_charges = Number(amount) * 3 / 100;
-            const totalamount = Number(amount) - platform_charges;
-            // creating a transaction and transfering money from sender Account to receiver Account
+        const numericAmount = Number(amount);
+        if (isNaN(numericAmount) || numericAmount <= 0) {
+            throw new ValidationError("Amount must be a positive number");
+        }
+        return yield db.transaction((tsx) => __awaiter(void 0, void 0, void 0, function* () {
+            // Row-level locking (SELECT FOR UPDATE) on sender account row inside transaction
+            const senderResults = yield tsx
+                .select()
+                .from(Account)
+                .where(eq(Account.accountNo, Number(senderAccountNo)))
+                .for('update');
+            if (senderResults.length < 1) {
+                throw new AccountNotFoundError(String(senderAccountNo));
+            }
+            const sender = senderResults[0];
+            // Row-level locking (SELECT FOR UPDATE) on receiver account row inside transaction
+            const receiverResults = yield tsx
+                .select()
+                .from(Account)
+                .where(eq(Account.accountNo, Number(receiverAccountNo)))
+                .for('update');
+            if (receiverResults.length < 1) {
+                throw new AccountNotFoundError(String(receiverAccountNo));
+            }
+            const receiver = receiverResults[0];
+            const platformAccountResults = yield tsx
+                .select()
+                .from(Account)
+                .where(eq(Account.id, platform_account_id))
+                .for('update');
+            if (platformAccountResults.length < 1) {
+                throw new AccountNotFoundError(platform_account_id);
+            }
+            const platformAccount = platformAccountResults[0];
+            const senderBalance = Number(sender.balance);
+            if (senderBalance < numericAmount) {
+                throw new InsufficientBalanceError();
+            }
+            // Decimal minor-unit rounding for 3% platform fee
+            const platform_charges = Math.round(numericAmount * 3) / 100;
+            const totalamount = Math.round((numericAmount - platform_charges) * 100) / 100;
             const [transferMoney] = yield tsx.insert(Transaction)
                 .values({
-                transaction_amount: String(totalamount),
-                sender_account_id: IssenderidExist[0].id,
-                receiver_account_id: IsreceiverId[0].id,
+                transaction_amount: totalamount.toFixed(2),
+                sender_account_id: sender.id,
+                receiver_account_id: receiver.id,
                 transactionType: "Credit",
                 status: "Success",
-                account_id: IssenderidExist[0].id,
+                account_id: sender.id,
             })
                 .returning({ id: Transaction.id });
-            //   recording in audit_log 
             yield tsx.insert(Audit_log).values({
-                user_id: IssenderidExist[0].user_id,
+                user_id: sender.user_id,
                 entity_id: transferMoney.id,
                 action: "Money transferred",
                 entity_type: "Transaction",
                 metadata: {
                     transactionId: transferMoney.id,
-                    senderAccountId: IssenderidExist[0].id,
-                    receiverAccountId: IsreceiverId[0].id,
+                    senderAccountId: sender.id,
+                    receiverAccountId: receiver.id,
                     amount,
-                    netAmount: String(totalamount),
-                    platformCharges: String(platform_charges)
+                    netAmount: totalamount.toFixed(2),
+                    platformCharges: platform_charges.toFixed(2)
                 }
             });
-            // entry in ledgersystem  for sender details
+            // Double-entry debit for sender (full transfer amount)
             yield tsx.insert(LedgerSystem).values({
-                account_id: IssenderidExist[0].id,
+                account_id: sender.id,
                 transaction_id: transferMoney.id,
                 type: "Debit",
-                amount: amount
+                amount: numericAmount.toFixed(2)
             });
-            // entry in ledgersystem for receiver details
+            // Double-entry credit for receiver (net transfer amount)
             yield tsx.insert(LedgerSystem).values({
-                account_id: IsreceiverId[0].id,
+                account_id: receiver.id,
                 transaction_id: transferMoney.id,
                 type: "Credit",
-                amount: String(totalamount)
+                amount: totalamount.toFixed(2)
             });
-            //  entry in ledgersystem for platform charges
+            // Double-entry credit for platform fee
             yield tsx.insert(LedgerSystem).values({
                 account_id: platform_account_id,
                 transaction_id: transferMoney.id,
                 type: "Credit",
-                amount: String(platform_charges)
+                amount: platform_charges.toFixed(2)
             });
-            // updating receiver account balance 
-            yield tsx.update(Account).set({
-                balance: String(Number(IsreceiverId[0].balance) + totalamount)
-            }).where(eq(Account.id, IsreceiverId[0].id));
-            // updating sender account balance (deduct the full amount, not just totalamount)
-            yield tsx.update(Account).set({
-                balance: String(Number(IssenderidExist[0].balance) - Number(amount))
-            }).where(eq(Account.id, IssenderidExist[0].id));
+            const newReceiverBalance = (Number(receiver.balance) + totalamount).toFixed(2);
+            const newSenderBalance = (Number(sender.balance) - numericAmount).toFixed(2);
+            const newPlatformBalance = (Number(platformAccount.balance) + platform_charges).toFixed(2);
+            yield tsx.update(Account).set({ balance: newReceiverBalance }).where(eq(Account.id, receiver.id));
+            yield tsx.update(Account).set({ balance: newSenderBalance }).where(eq(Account.id, sender.id));
+            yield tsx.update(Account).set({ balance: newPlatformBalance }).where(eq(Account.id, platform_account_id));
+            return { message: "Money transferred successfully", status: 200 };
         }));
-        return { message: "Money transferred successfully", status: 200 };
     }
     catch (err) {
         console.error(err);
@@ -102,22 +121,43 @@ export const SendMoneyRespository = (_a) => __awaiter(void 0, [_a], void 0, func
 });
 export const DepositMoneyRepository = (data) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const isAccount = yield db.select().from(Account).where(eq(Account.id, data.sender_account_id));
-        if (isAccount.length < 1) {
-            throw new AccountNotFoundError(data.sender_account_id);
+        const clearing_account_id = process.env.CLEARING_ACCOUNTNO;
+        if (!clearing_account_id) {
+            return { message: "missing clearing account details", status: 403 };
         }
-        const totalamount = Number(data.transaction_amount) + Number(isAccount[0].balance);
-        const transaction = yield db.transaction((tsx) => __awaiter(void 0, void 0, void 0, function* () {
-            //  creating transaction for adding money to account 
+        const numericAmount = Number(data.transaction_amount);
+        if (isNaN(numericAmount) || numericAmount <= 0) {
+            throw new ValidationError("Amount must be a positive number");
+        }
+        return yield db.transaction((tsx) => __awaiter(void 0, void 0, void 0, function* () {
+            const isAccount = yield tsx
+                .select()
+                .from(Account)
+                .where(eq(Account.id, data.sender_account_id))
+                .for('update');
+            if (isAccount.length < 1) {
+                throw new AccountNotFoundError(data.sender_account_id);
+            }
+            const ClearingAccountDetails = yield tsx
+                .select()
+                .from(Account)
+                .where(eq(Account.id, clearing_account_id))
+                .for('update');
+            if (ClearingAccountDetails.length < 1) {
+                throw new AccountNotFoundError(clearing_account_id);
+            }
+            const currentBalance = Number(isAccount[0].balance);
+            const currentClearingBalance = Number(ClearingAccountDetails[0].balance);
+            const totalamount = (currentBalance + numericAmount).toFixed(2);
+            const newClearingBalance = (currentClearingBalance - numericAmount).toFixed(2);
             const [depositTransaction] = yield tsx.insert(Transaction).values({
-                transaction_amount: data.transaction_amount,
+                transaction_amount: numericAmount.toFixed(2),
                 receiver_account_id: data.sender_account_id,
                 transactionType: "Credit",
                 status: "Success",
                 account_id: data.sender_account_id,
                 sender_account_id: data.sender_account_id
             }).returning({ id: Transaction.id });
-            // recording in audit_log
             yield tsx.insert(Audit_log).values({
                 user_id: isAccount[0].user_id,
                 entity_id: depositTransaction.id,
@@ -127,22 +167,32 @@ export const DepositMoneyRepository = (data) => __awaiter(void 0, void 0, void 0
                     transactionId: depositTransaction.id,
                     accountId: data.sender_account_id,
                     amount: data.transaction_amount,
-                    newBalance: String(totalamount)
+                    newBalance: totalamount
                 }
             });
-            // ledger entry for deposit
+            // maintaing amount deposit in the bank account via bank khatabook
+            yield tsx.insert(LedgerSystem).values({
+                account_id: clearing_account_id,
+                transaction_id: depositTransaction.id,
+                type: "Debit",
+                amount: numericAmount.toFixed(2)
+            });
+            // entry of user account deposity details
             yield tsx.insert(LedgerSystem).values({
                 account_id: data.sender_account_id,
                 transaction_id: depositTransaction.id,
                 type: "Credit",
-                amount: data.transaction_amount
+                amount: numericAmount.toFixed(2)
             });
-            // updating account balance 
+            // updating clearing account balance
             yield tsx.update(Account).set({
-                balance: String(totalamount)
+                balance: newClearingBalance
+            }).where(eq(Account.id, clearing_account_id));
+            yield tsx.update(Account).set({
+                balance: totalamount
             }).where(eq(Account.id, data.sender_account_id));
+            return { message: "Deposit completed successfully", status: 200, transaction: depositTransaction };
         }));
-        return { message: "Deposit completed successfully", status: 200, transaction };
     }
     catch (err) {
         console.error(err);
@@ -151,25 +201,46 @@ export const DepositMoneyRepository = (data) => __awaiter(void 0, void 0, void 0
 });
 export const CreditMoneyRepository = (_a) => __awaiter(void 0, [_a], void 0, function* ({ accountNo, amount }) {
     try {
-        const isAccount = yield db.select().from(Account).where(eq(Account.accountNo, accountNo));
-        if (isAccount.length < 1) {
-            throw new AccountNotFoundError(String(accountNo));
+        const clearing_account_id = process.env.CLEARING_ACCOUNTNO;
+        if (!clearing_account_id) {
+            return { message: "missing clearing account details", status: 403 };
         }
-        if (Number(isAccount[0].balance) < Number(amount)) {
-            throw new InsufficientBalanceError();
+        const numericAmount = Number(amount);
+        if (isNaN(numericAmount) || numericAmount <= 0) {
+            throw new ValidationError("Amount must be a positive number");
         }
-        //   credit money from account;
-        yield db.transaction((tsx) => __awaiter(void 0, void 0, void 0, function* () {
-            // credit  money from account
+        return yield db.transaction((tsx) => __awaiter(void 0, void 0, void 0, function* () {
+            const isAccount = yield tsx
+                .select()
+                .from(Account)
+                .where(eq(Account.accountNo, accountNo))
+                .for('update');
+            if (isAccount.length < 1) {
+                throw new AccountNotFoundError(String(accountNo));
+            }
+            const currentBalance = Number(isAccount[0].balance);
+            if (currentBalance < numericAmount) {
+                throw new InsufficientBalanceError();
+            }
+            const ClearingAccountDetails = yield tsx
+                .select()
+                .from(Account)
+                .where(eq(Account.id, clearing_account_id))
+                .for('update');
+            if (ClearingAccountDetails.length < 1) {
+                throw new AccountNotFoundError(clearing_account_id);
+            }
+            const currentClearingBalance = Number(ClearingAccountDetails[0].balance);
+            const newClearingBalance = (currentClearingBalance + numericAmount).toFixed(2);
+            const remainingBalance = (currentBalance - numericAmount).toFixed(2);
             const [withdrawTransaction] = yield tsx.insert(Transaction).values({
-                transaction_amount: amount,
+                transaction_amount: numericAmount.toFixed(2),
                 sender_account_id: isAccount[0].id,
                 receiver_account_id: isAccount[0].id,
                 transactionType: "Debit",
                 status: "Success",
                 account_id: isAccount[0].id
             }).returning({ id: Transaction.id });
-            // recording in audit_log 
             yield tsx.insert(Audit_log).values({
                 user_id: isAccount[0].user_id,
                 entity_id: withdrawTransaction.id,
@@ -179,22 +250,27 @@ export const CreditMoneyRepository = (_a) => __awaiter(void 0, [_a], void 0, fun
                     transactionId: withdrawTransaction.id,
                     accountId: isAccount[0].id,
                     amount,
-                    remainingBalance: String(Number(isAccount[0].balance) - Number(amount))
+                    remainingBalance
                 }
             });
-            // ledger entry for withdrawal
             yield tsx.insert(LedgerSystem).values({
                 account_id: isAccount[0].id,
                 transaction_id: withdrawTransaction.id,
                 type: "Debit",
-                amount
+                amount: numericAmount.toFixed(2)
             });
-            // updating account balance
+            // maintaing amount deposit in the bank account via bank khatabook
+            yield tsx.insert(LedgerSystem).values({
+                account_id: clearing_account_id,
+                transaction_id: withdrawTransaction.id,
+                type: "Debit",
+                amount: numericAmount.toFixed(2)
+            });
             yield tsx.update(Account).set({
-                balance: String(Number(isAccount[0].balance) - Number(amount))
+                balance: remainingBalance
             }).where(eq(Account.id, isAccount[0].id));
+            return { message: "Withdrawal completed successfully", status: 200 };
         }));
-        return { message: "Withdrawal completed successfully", status: 200 };
     }
     catch (err) {
         console.error(err);

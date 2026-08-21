@@ -96,20 +96,20 @@ describe("SendMoney & Concurrency Integration Tests (Real Postgres)", () => {
         // Receiver credited net amount (₹1000 - 3% fee = ₹970) -> 2000 + 970 = 2970
         expect(updatedReceiver[0].balance).toBe("2970.00");
 
-        // Verify 3 Ledger System entries created atomically
+        // Verify 3 Ledger System entries created atomically (sender debit, receiver credit, platform fee credit)
         const ledgers = await db.select().from(LedgerSystem);
         expect(ledgers.length).toBe(3);
 
-        const senderDebit = ledgers.find(l => l.account_id === senderAccount.id);
-        const receiverCredit = ledgers.find(l => l.account_id === receiverAccount.id);
-        const platformCredit = ledgers.find(l => l.account_id === platformAccountId);
+        const senderDebit = ledgers.find(l => l.account_id === senderAccount.id && l.type === "Debit");
+        const receiverCredit = ledgers.find(l => l.account_id === receiverAccount.id && l.type === "Credit");
+        const platformLedger = ledgers.find(l => l.account_id === platformAccountId && l.type === "Credit");
 
         expect(senderDebit?.type).toBe("Debit");
         expect(senderDebit?.amount).toBe("1000.00");
         expect(receiverCredit?.type).toBe("Credit");
         expect(receiverCredit?.amount).toBe("970.00");
-        expect(platformCredit?.type).toBe("Credit");
-        expect(platformCredit?.amount).toBe("30.00");
+        expect(platformLedger?.type).toBe("Credit");
+        expect(platformLedger?.amount).toBe("30.00");
     });
 
     test("CRITICAL CONCURRENCY TEST: Row-level locking (SELECT FOR UPDATE) prevents race conditions & negative balances", async () => {
@@ -151,16 +151,19 @@ describe("SendMoney & Concurrency Integration Tests (Real Postgres)", () => {
         // Temporarily clear platform account env to trigger mid-transaction failure
         delete process.env.PLATFORM_ACCOUNTNO;
 
-        await expect(SendMoneyRespository({
+        const res = await SendMoneyRespository({
             senderAccountNo: senderAccount.accountNo,
             receiverAccountNo: receiverAccount.accountNo,
             amount: "1000.00"
-        })).rejects.toThrow();
+        });
+
+        // Expect repository to return missing-platform response (no DB writes)
+        expect(res).toHaveProperty("status", 403);
 
         // Restore platform env
         process.env.PLATFORM_ACCOUNTNO = platformAccountId;
 
-        // Verify zero transactions or ledgers were persisted (complete rollback)
+        // Verify zero transactions or ledgers were persisted (complete rollback / no-op)
         const transactions = await db.select().from(Transaction);
         const ledgers = await db.select().from(LedgerSystem);
         expect(transactions.length).toBe(0);

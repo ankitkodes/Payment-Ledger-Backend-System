@@ -85,7 +85,7 @@ export const authorizeTransactionAccess = (fieldName = "senderAccountNo", lookup
             next();
         }
         catch (error) {
-            return res.status(500).json({ message: "Authorization check failed" });
+            next(error);
         }
     });
 };
