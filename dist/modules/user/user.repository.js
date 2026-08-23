@@ -84,7 +84,7 @@ export const ProfileRepository = (userId) => __awaiter(void 0, void 0, void 0, f
             name: User.name,
             address: User.address,
             PhoneNo: User.phoneNo,
-            email: User.phoneNo
+            email: User.email
         }).from(User).where(eq(User.id, userId));
         return { message: "Profile returned successfully", status: 200, user: userDetails[0] };
     }

@@ -8,7 +8,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 import { Account, Audit_log, Transaction, User } from "../../db/schema.js";
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, lt, or } from "drizzle-orm";
 import { db } from "../../config/db.js";
 import { AccountNotFoundError } from "../../errors/account/AccountNotFoundError.js";
 import { UnauthorizedError } from "../../errors/auth/UnauthorizedError.js";
@@ -69,16 +69,39 @@ export const GetAccountDetailsRepository = (accountId) => __awaiter(void 0, void
         throw err;
     }
 });
-export const GetTransactionHistoryRepository = (accountId) => __awaiter(void 0, void 0, void 0, function* () {
+export const GetTransactionHistoryRepository = (accountId, cursorId, limit) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const transactions = yield db.select()
-            .from(Transaction)
-            .where(or(eq(Transaction.sender_account_id, accountId), eq(Transaction.receiver_account_id, accountId)))
-            .orderBy(desc(Transaction.created_at)).limit(10);
+        const conditions = [eq(Transaction.account_id, accountId)];
+        if (cursorId) {
+            const cursorRow = yield db.select({
+                id: Transaction.id,
+                created_at: Transaction.created_at
+            }).from(Transaction).where(and(eq(Transaction.id, cursorId), eq(Transaction.account_id, accountId)));
+            const cursor = cursorRow[0];
+            if (!(cursor === null || cursor === void 0 ? void 0 : cursor.created_at)) {
+                throw new ValidationError("Invalid transaction cursor");
+            }
+            const cursorCondition = or(lt(Transaction.created_at, cursor.created_at), and(eq(Transaction.created_at, cursor.created_at), lt(Transaction.id, cursorId)));
+            if (cursorCondition) {
+                conditions.push(cursorCondition);
+            }
+        }
+        const results = yield db.select().from(Transaction)
+            .where(and(...conditions))
+            .orderBy(desc(Transaction.created_at), desc(Transaction.id))
+            .limit(limit + 1);
+        const hasMore = results.length > limit;
+        const transactions = hasMore ? results.slice(0, limit) : results;
         if (transactions.length < 1) {
             return { message: "No transaction history found", status: 404, transactions: [] };
         }
-        return { message: "Transaction history fetched successfully", status: 200, transactions };
+        return {
+            message: "Transaction history fetched successfully",
+            status: 200,
+            transactions,
+            hasMore,
+            nextCursor: hasMore ? transactions[transactions.length - 1].id : null
+        };
     }
     catch (err) {
         console.error(err);

@@ -25,6 +25,18 @@ const swaggerDocument = {
                 description: 'Enter the JWT token obtained from the /user/login endpoint'
             }
         },
+        parameters: {
+            IdempotencyKey: {
+                name: 'Idempotency-Key',
+                in: 'header',
+                required: false,
+                schema: {
+                    type: 'string',
+                    example: 'idemp-key-9b1deb4d-3b7d-4bad'
+                },
+                description: 'Optional unique UUID key to guarantee request idempotency. Retrying with the same key returns the cached response without duplicate balance deduction or ledger creation.'
+            }
+        },
         schemas: {
             // ─── User Schemas ───
             UserRegister: {
@@ -422,6 +434,20 @@ const swaggerDocument = {
                         required: true,
                         schema: { type: 'string', format: 'uuid' },
                         description: 'Account UUID'
+                    },
+                    {
+                        name: 'cursorid',
+                        in: 'query',
+                        required: false,
+                        schema: { type: 'string', format: 'uuid' },
+                        description: 'ID of the last transaction from the previous page'
+                    },
+                    {
+                        name: 'limit',
+                        in: 'query',
+                        required: false,
+                        schema: { type: 'integer', minimum: 1, maximum: 100, default: 10 },
+                        description: 'Number of transactions to return'
                     }
                 ],
                 responses: {
@@ -436,11 +462,17 @@ const swaggerDocument = {
                                         transactions: {
                                             type: 'array',
                                             items: { type: 'object' }
-                                        }
+                                        },
+                                        hasMore: { type: 'boolean' },
+                                        nextCursor: { type: 'string', format: 'uuid', nullable: true }
                                     }
                                 }
                             }
                         }
+                    },
+                    '400': {
+                        description: 'Invalid pagination parameters',
+                        content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
                     },
                     '401': {
                         description: 'Unauthorized',
@@ -533,9 +565,10 @@ const swaggerDocument = {
             post: {
                 tags: ['Transaction'],
                 summary: 'Send money (peer-to-peer transfer)',
-                description: 'Transfers money from sender account to receiver account. Deducts 3% platform charges. Creates ledger entries for both parties and the platform.',
+                description: 'Transfers money from sender account to receiver account. Deducts 3% platform charges. Supports Idempotency-Key header for duplicate execution prevention.',
                 security: [{ BearerAuth: [] }],
                 parameters: [
+                    { $ref: '#/components/parameters/IdempotencyKey' },
                     {
                         name: 'senderAccountNo',
                         in: 'path',
@@ -567,7 +600,7 @@ const swaggerDocument = {
                 },
                 responses: {
                     '200': {
-                        description: 'Money transferred successfully',
+                        description: 'Money transferred successfully (or returned from idempotency cache)',
                         content: { 'application/json': { schema: { $ref: '#/components/schemas/MessageResponse' } } }
                     },
                     '400': {
@@ -586,6 +619,14 @@ const swaggerDocument = {
                         description: 'Sender or receiver account not found',
                         content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
                     },
+                    '409': {
+                        description: 'Conflict — Request already in progress with this Idempotency-Key',
+                        content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+                    },
+                    '422': {
+                        description: 'Unprocessable Entity — Idempotency-Key reused with a different request payload',
+                        content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+                    },
                     '500': {
                         description: 'Server error',
                         content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
@@ -597,8 +638,11 @@ const swaggerDocument = {
             post: {
                 tags: ['Transaction'],
                 summary: 'Deposit money into account',
-                description: 'Adds money to a bank account. Minimum deposit amount is ₹500. Creates a transaction record and updates account balance.',
+                description: 'Adds money to a bank account. Minimum deposit amount is ₹500. Supports Idempotency-Key header.',
                 security: [{ BearerAuth: [] }],
+                parameters: [
+                    { $ref: '#/components/parameters/IdempotencyKey' }
+                ],
                 requestBody: {
                     required: true,
                     content: {
@@ -628,6 +672,14 @@ const swaggerDocument = {
                         description: 'Account not found',
                         content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
                     },
+                    '409': {
+                        description: 'Conflict — Request already in progress with this Idempotency-Key',
+                        content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+                    },
+                    '422': {
+                        description: 'Unprocessable Entity — Idempotency-Key reused with a different request payload',
+                        content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+                    },
                     '500': {
                         description: 'Server error',
                         content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
@@ -639,9 +691,10 @@ const swaggerDocument = {
             post: {
                 tags: ['Transaction'],
                 summary: 'Withdraw money from account',
-                description: 'Withdraws money from a bank account. Minimum withdrawal amount is ₹500. Checks for sufficient balance before processing.',
+                description: 'Withdraws money from a bank account. Minimum withdrawal amount is ₹500. Supports Idempotency-Key header.',
                 security: [{ BearerAuth: [] }],
                 parameters: [
+                    { $ref: '#/components/parameters/IdempotencyKey' },
                     {
                         name: 'accountNo',
                         in: 'path',
@@ -683,6 +736,14 @@ const swaggerDocument = {
                     },
                     '404': {
                         description: 'Account not found',
+                        content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+                    },
+                    '409': {
+                        description: 'Conflict — Request already in progress with this Idempotency-Key',
+                        content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+                    },
+                    '422': {
+                        description: 'Unprocessable Entity — Idempotency-Key reused with a different request payload',
                         content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
                     },
                     '500': {

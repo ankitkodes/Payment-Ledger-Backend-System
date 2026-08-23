@@ -446,6 +446,20 @@ const swaggerDocument = {
                         required: true,
                         schema: { type: 'string', format: 'uuid' },
                         description: 'Account UUID'
+                    },
+                    {
+                        name: 'cursorid',
+                        in: 'query',
+                        required: false,
+                        schema: { type: 'string', format: 'uuid' },
+                        description: 'ID of the last transaction from the previous page'
+                    },
+                    {
+                        name: 'limit',
+                        in: 'query',
+                        required: false,
+                        schema: { type: 'integer', minimum: 1, maximum: 100, default: 10 },
+                        description: 'Number of transactions to return'
                     }
                 ],
                 responses: {
@@ -460,11 +474,17 @@ const swaggerDocument = {
                                         transactions: {
                                             type: 'array',
                                             items: { type: 'object' }
-                                        }
+                                        },
+                                        hasMore: { type: 'boolean' },
+                                        nextCursor: { type: 'string', format: 'uuid', nullable: true }
                                     }
                                 }
                             }
                         }
+                    },
+                    '400': {
+                        description: 'Invalid pagination parameters',
+                        content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
                     },
                     '401': {
                         description: 'Unauthorized',

@@ -28,13 +28,22 @@ export const GetAccountDetails = asyncHander(async (req: { params: { accountId: 
 
 });
 
-export const TransactionHistory = asyncHander(async (req: { params: { accountId: string } }, res: any) => {
+export const TransactionHistory = asyncHander(async (req: { params: { accountId: string }; query: { cursorid?: string; limit?: string } }, res: any) => {
 
     const { accountId } = req.params;
-    const result = await TransactionHistoryService(accountId);
+    const cursorId = req.query.cursorid;
+    const parsedLimit = Number(req.query.limit ?? 10);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+        return res.status(400).json({ message: "Limit must be an integer between 1 and 100" });
+    }
+
+    const limit = parsedLimit;
+    const result = await TransactionHistoryService(accountId, cursorId, limit);
     return res.status(result.status).json({
         message: result.message,
-        transactions: result.transactions ?? []
+        transactions: result.transactions ?? [],
+        hasMore: result.hasMore ?? false,
+        nextCursor: result.nextCursor ?? null
     })
 
 })

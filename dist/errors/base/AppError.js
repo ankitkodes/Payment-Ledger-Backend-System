@@ -6,4 +6,7 @@ export class AppError extends Error {
         Object.setPrototypeOf(this, AppError.prototype);
         Error.captureStackTrace(this, this.constructor);
     }
+    get statusCode() {
+        return this.StatusCode;
+    }
 }

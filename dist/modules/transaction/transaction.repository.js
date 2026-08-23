@@ -23,27 +23,17 @@ export const SendMoneyRespository = (_a) => __awaiter(void 0, [_a], void 0, func
         if (isNaN(numericAmount) || numericAmount <= 0) {
             throw new ValidationError("Amount must be a positive number");
         }
+        const [firstLock, secondLock] = Number(senderAccountNo) < Number(receiverAccountNo) ? [senderAccountNo, receiverAccountNo] : [receiverAccountNo, senderAccountNo];
         return yield db.transaction((tsx) => __awaiter(void 0, void 0, void 0, function* () {
             // Row-level locking (SELECT FOR UPDATE) on sender account row inside transaction
-            const senderResults = yield tsx
-                .select()
-                .from(Account)
-                .where(eq(Account.accountNo, Number(senderAccountNo)))
-                .for('update');
-            if (senderResults.length < 1) {
-                throw new AccountNotFoundError(String(senderAccountNo));
+            const firstResults = yield tsx.select().from(Account).where(eq(Account.accountNo, Number(firstLock))).for('update');
+            const secondResults = yield tsx.select().from(Account).where(eq(Account.accountNo, Number(secondLock))).for('update');
+            if (firstResults.length < 1 || secondResults.length < 1) {
+                throw new AccountNotFoundError("Sender or receiver account not found");
             }
-            const sender = senderResults[0];
-            // Row-level locking (SELECT FOR UPDATE) on receiver account row inside transaction
-            const receiverResults = yield tsx
-                .select()
-                .from(Account)
-                .where(eq(Account.accountNo, Number(receiverAccountNo)))
-                .for('update');
-            if (receiverResults.length < 1) {
-                throw new AccountNotFoundError(String(receiverAccountNo));
-            }
-            const receiver = receiverResults[0];
+            // NOW figure out who's actually sender vs receiver, independent of lock order
+            const sender = firstResults[0].accountNo === Number(senderAccountNo) ? firstResults[0] : secondResults[0];
+            const receiver = firstResults[0].accountNo === Number(senderAccountNo) ? secondResults[0] : firstResults[0];
             const platformAccountResults = yield tsx
                 .select()
                 .from(Account)
@@ -263,9 +253,12 @@ export const CreditMoneyRepository = (_a) => __awaiter(void 0, [_a], void 0, fun
             yield tsx.insert(LedgerSystem).values({
                 account_id: clearing_account_id,
                 transaction_id: withdrawTransaction.id,
-                type: "Debit",
+                type: "Credit",
                 amount: numericAmount.toFixed(2)
             });
+            yield tsx.update(Account).set({
+                balance: newClearingBalance
+            }).where(eq(Account.id, clearing_account_id));
             yield tsx.update(Account).set({
                 balance: remainingBalance
             }).where(eq(Account.id, isAccount[0].id));

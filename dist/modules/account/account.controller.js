@@ -30,12 +30,20 @@ export const GetAccountDetails = asyncHander((req, res) => __awaiter(void 0, voi
     return res.status(result.status).json({ message: result.message, account: result.account });
 }));
 export const TransactionHistory = asyncHander((req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b, _c, _d;
     const { accountId } = req.params;
-    const result = yield TransactionHistoryService(accountId);
+    const cursorId = req.query.cursorid;
+    const parsedLimit = Number((_a = req.query.limit) !== null && _a !== void 0 ? _a : 10);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+        return res.status(400).json({ message: "Limit must be an integer between 1 and 100" });
+    }
+    const limit = parsedLimit;
+    const result = yield TransactionHistoryService(accountId, cursorId, limit);
     return res.status(result.status).json({
         message: result.message,
-        transactions: (_a = result.transactions) !== null && _a !== void 0 ? _a : []
+        transactions: (_b = result.transactions) !== null && _b !== void 0 ? _b : [],
+        hasMore: (_c = result.hasMore) !== null && _c !== void 0 ? _c : false,
+        nextCursor: (_d = result.nextCursor) !== null && _d !== void 0 ? _d : null
     });
 }));
 export const GetUserAllAccount = asyncHander((req, res) => __awaiter(void 0, void 0, void 0, function* () {
