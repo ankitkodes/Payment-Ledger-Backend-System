@@ -12,8 +12,14 @@ export const GetAccountDetailsService = async (accountId: string) => {
     return await GetAccountDetailsRepository(accountId);
 }
 
-export const TransactionHistoryService = async (accountId: string, cursorId: string | undefined, limit: number) => {
-    return await GetTransactionHistoryRepository(accountId, cursorId, limit);
+export const TransactionHistoryService = async (
+    accountId: string,
+    cursorId: string | undefined,
+    limit: number,
+    startDate: Date | undefined,
+    endDate: Date | undefined
+) => {
+    return await GetTransactionHistoryRepository(accountId, cursorId, limit, startDate, endDate);
 }
 
 export const GetUserAllAccountService = async (userId: string) => {

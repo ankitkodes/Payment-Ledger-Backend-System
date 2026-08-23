@@ -1,6 +1,6 @@
 import { Account, Audit_log, Transaction, User } from "../../db/schema.js";
 import { AccountRegisterSchema } from "./account.types.js";
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { and, desc, eq, gte, lte, lt, or } from "drizzle-orm";
 import { db } from "../../config/db.js";
 import { AccountNotFoundError } from "../../errors/account/AccountNotFoundError.js";
 import { UnauthorizedError } from "../../errors/auth/UnauthorizedError.js";
@@ -70,9 +70,22 @@ export const GetAccountDetailsRepository = async (accountId: string) => {
     }
 };
 
-export const GetTransactionHistoryRepository = async (accountId: string, cursorId: string | undefined, limit: number) => {
+export const GetTransactionHistoryRepository = async (
+    accountId: string,
+    cursorId: string | undefined,
+    limit: number,
+    startDate: Date | undefined,
+    endDate: Date | undefined
+) => {
     try {
         const conditions = [eq(Transaction.account_id, accountId)];
+
+        if (startDate) {
+            conditions.push(gte(Transaction.created_at, startDate));
+        }
+        if (endDate) {
+            conditions.push(lte(Transaction.created_at, endDate));
+        }
 
         if (cursorId) {
             const cursorRow = await db.select({

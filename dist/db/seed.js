@@ -8,11 +8,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 import "dotenv/config";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { sql } from "drizzle-orm";
 import { User, Account, Transaction, LedgerSystem, Audit_log } from "./schema.js";
-// ─── DB connection (same pattern as src/config/db.ts) ───
-const db = drizzle(process.env.DATABASE_URL);
+import { db } from "../config/db.js";
 const PLATFORM_ACCOUNT_ID = process.env.PLATFORM_ACCOUNTNO.trim();
 if (!PLATFORM_ACCOUNT_ID) {
     console.error("❌ PLATFORM_ACCOUNTNO not set in .env");

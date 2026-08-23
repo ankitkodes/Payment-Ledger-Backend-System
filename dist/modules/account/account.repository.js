@@ -8,7 +8,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 import { Account, Audit_log, Transaction, User } from "../../db/schema.js";
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { and, desc, eq, gte, lte, lt, or } from "drizzle-orm";
 import { db } from "../../config/db.js";
 import { AccountNotFoundError } from "../../errors/account/AccountNotFoundError.js";
 import { UnauthorizedError } from "../../errors/auth/UnauthorizedError.js";
@@ -69,9 +69,15 @@ export const GetAccountDetailsRepository = (accountId) => __awaiter(void 0, void
         throw err;
     }
 });
-export const GetTransactionHistoryRepository = (accountId, cursorId, limit) => __awaiter(void 0, void 0, void 0, function* () {
+export const GetTransactionHistoryRepository = (accountId, cursorId, limit, startDate, endDate) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const conditions = [eq(Transaction.account_id, accountId)];
+        if (startDate) {
+            conditions.push(gte(Transaction.created_at, startDate));
+        }
+        if (endDate) {
+            conditions.push(lte(Transaction.created_at, endDate));
+        }
         if (cursorId) {
             const cursorRow = yield db.select({
                 id: Transaction.id,

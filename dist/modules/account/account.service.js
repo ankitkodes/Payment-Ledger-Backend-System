@@ -17,8 +17,8 @@ export const CreateAccountService = (data, userId) => __awaiter(void 0, void 0, 
 export const GetAccountDetailsService = (accountId) => __awaiter(void 0, void 0, void 0, function* () {
     return yield GetAccountDetailsRepository(accountId);
 });
-export const TransactionHistoryService = (accountId, cursorId, limit) => __awaiter(void 0, void 0, void 0, function* () {
-    return yield GetTransactionHistoryRepository(accountId, cursorId, limit);
+export const TransactionHistoryService = (accountId, cursorId, limit, startDate, endDate) => __awaiter(void 0, void 0, void 0, function* () {
+    return yield GetTransactionHistoryRepository(accountId, cursorId, limit, startDate, endDate);
 });
 export const GetUserAllAccountService = (userId) => __awaiter(void 0, void 0, void 0, function* () {
     return GetUserAllAccountRepository(userId);

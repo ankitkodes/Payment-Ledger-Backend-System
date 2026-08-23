@@ -1,4 +1,3 @@
-import { drizzle } from "drizzle-orm/node-postgres";
 import { UserLoginSchema, UserRegistrationSchema } from "./user.types.js"
 import { Audit_log, User } from "../../db/schema.js";
 import bcrypt from "bcryptjs";

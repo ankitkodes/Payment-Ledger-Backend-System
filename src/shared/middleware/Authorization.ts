@@ -1,13 +1,11 @@
-import { drizzle } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import { Account } from "../../db/schema.js";
+import { db } from "../../config/db.js";
 import { GetAccountDetailsRepository } from "../../modules/account/account.repository.js";
 import { ForbiddenError } from "../../errors/auth/ForbiddenError.js";
 import { AccountNotFoundError } from "../../errors/account/AccountNotFoundError.js";
 import { UnauthorizedError } from "../../errors/auth/UnauthorizedError.js";
 import { ValidationError } from "../../errors/validation/ValidationError.js";
-
-const db = drizzle(process.env.DATABASE_URL!);
 
 export const authorizeUserAccess = (paramName = "userId") => {
     return (req: any, res: any, next: any) => {

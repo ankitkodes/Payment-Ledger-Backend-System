@@ -1,10 +1,8 @@
 import "dotenv/config";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { sql } from "drizzle-orm";
 import { User, Account, Transaction, LedgerSystem, Audit_log } from "./schema.js";
+import { db } from "../config/db.js";
 
-// ─── DB connection (same pattern as src/config/db.ts) ───
-const db = drizzle(process.env.DATABASE_URL!);
 const PLATFORM_ACCOUNT_ID = process.env.PLATFORM_ACCOUNTNO!.trim();
 
 if (!PLATFORM_ACCOUNT_ID) {

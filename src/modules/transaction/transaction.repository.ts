@@ -1,4 +1,3 @@
-import { drizzle } from "drizzle-orm/node-postgres";
 import { CreditMoneySchema, DepositMoneyType, SendMoneySchema } from "./transaction.types.js"
 import { Account, Audit_log, LedgerSystem, Transaction } from "../../db/schema.js";
 import { eq } from "drizzle-orm";

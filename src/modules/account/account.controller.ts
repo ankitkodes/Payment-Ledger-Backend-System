@@ -28,7 +28,7 @@ export const GetAccountDetails = asyncHander(async (req: { params: { accountId: 
 
 });
 
-export const TransactionHistory = asyncHander(async (req: { params: { accountId: string }; query: { cursorid?: string; limit?: string } }, res: any) => {
+export const TransactionHistory = asyncHander(async (req: { params: { accountId: string }; query: { cursorid?: string; limit?: string; startDate?: string; endDate?: string } }, res: any) => {
 
     const { accountId } = req.params;
     const cursorId = req.query.cursorid;
@@ -37,8 +37,32 @@ export const TransactionHistory = asyncHander(async (req: { params: { accountId:
         return res.status(400).json({ message: "Limit must be an integer between 1 and 100" });
     }
 
+    const parseDate = (value: string | undefined, endOfDay = false) => {
+        if (!value) {
+            return undefined;
+        }
+
+        const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+        const date = new Date(dateOnly
+            ? `${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`
+            : value);
+        if (Number.isNaN(date.getTime())) {
+            return undefined;
+        }
+        return date;
+    };
+
+    const startDate = parseDate(req.query.startDate);
+    const endDate = parseDate(req.query.endDate, true);
+    if ((req.query.startDate && !startDate) || (req.query.endDate && !endDate)) {
+        return res.status(400).json({ message: "startDate and endDate must be valid ISO dates" });
+    }
+    if (startDate && endDate && startDate > endDate) {
+        return res.status(400).json({ message: "startDate must be before or equal to endDate" });
+    }
+
     const limit = parsedLimit;
-    const result = await TransactionHistoryService(accountId, cursorId, limit);
+    const result = await TransactionHistoryService(accountId, cursorId, limit, startDate, endDate);
     return res.status(result.status).json({
         message: result.message,
         transactions: result.transactions ?? [],

@@ -460,6 +460,20 @@ const swaggerDocument = {
                         required: false,
                         schema: { type: 'integer', minimum: 1, maximum: 100, default: 10 },
                         description: 'Number of transactions to return'
+                    },
+                    {
+                        name: 'startDate',
+                        in: 'query',
+                        required: false,
+                        schema: { type: 'string', format: 'date-time' },
+                        description: 'ISO date or date-time; include transactions created at or after this value'
+                    },
+                    {
+                        name: 'endDate',
+                        in: 'query',
+                        required: false,
+                        schema: { type: 'string', format: 'date-time' },
+                        description: 'ISO date or date-time; include transactions created at or before this value'
                     }
                 ],
                 responses: {
@@ -483,7 +497,7 @@ const swaggerDocument = {
                         }
                     },
                     '400': {
-                        description: 'Invalid pagination parameters',
+                        description: 'Invalid pagination or date parameters',
                         content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
                     },
                     '401': {
