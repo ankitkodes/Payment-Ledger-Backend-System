@@ -6,6 +6,7 @@ import { db } from "../../config/db.js";
 import { InsufficientBalanceError } from "../../errors/account/InsufficientBalanceError.js";
 import { AccountNotFoundError } from "../../errors/account/AccountNotFoundError.js";
 import { ValidationError } from "../../errors/validation/ValidationError.js";
+import { send } from "process";
 
 export const SendMoneyRespository = async ({ senderAccountNo, receiverAccountNo, amount }: SendMoneySchema) => {
     try {
@@ -18,32 +19,19 @@ export const SendMoneyRespository = async ({ senderAccountNo, receiverAccountNo,
         if (isNaN(numericAmount) || numericAmount <= 0) {
             throw new ValidationError("Amount must be a positive number");
         }
-
+        const [firstLock, secondLock] = Number(senderAccountNo) < Number(receiverAccountNo) ? [senderAccountNo, receiverAccountNo] : [receiverAccountNo, senderAccountNo];
         return await db.transaction(async (tsx) => {
             // Row-level locking (SELECT FOR UPDATE) on sender account row inside transaction
-            const senderResults = await tsx
-                .select()
-                .from(Account)
-                .where(eq(Account.accountNo, Number(senderAccountNo)))
-                .for('update');
+            const firstResults = await tsx.select().from(Account).where(eq(Account.accountNo, Number(firstLock))).for('update');
+            const secondResults = await tsx.select().from(Account).where(eq(Account.accountNo, Number(secondLock))).for('update');
 
-            if (senderResults.length < 1) {
-                throw new AccountNotFoundError(String(senderAccountNo));
+            if (firstResults.length < 1 || secondResults.length < 1) {
+                throw new AccountNotFoundError("Sender or receiver account not found");
             }
-            const sender = senderResults[0];
 
-            // Row-level locking (SELECT FOR UPDATE) on receiver account row inside transaction
-            const receiverResults = await tsx
-                .select()
-                .from(Account)
-                .where(eq(Account.accountNo, Number(receiverAccountNo)))
-                .for('update');
-
-            if (receiverResults.length < 1) {
-                throw new AccountNotFoundError(String(receiverAccountNo));
-            }
-            const receiver = receiverResults[0];
-
+            // NOW figure out who's actually sender vs receiver, independent of lock order
+            const sender = firstResults[0].accountNo === Number(senderAccountNo) ? firstResults[0] : secondResults[0];
+            const receiver = firstResults[0].accountNo === Number(senderAccountNo) ? secondResults[0] : firstResults[0];
             const platformAccountResults = await tsx
                 .select()
                 .from(Account)
@@ -298,9 +286,13 @@ export const CreditMoneyRepository = async ({ accountNo, amount }: CreditMoneySc
             await tsx.insert(LedgerSystem).values({
                 account_id: clearing_account_id,
                 transaction_id: withdrawTransaction.id,
-                type: "Debit",
+                type: "Credit",
                 amount: numericAmount.toFixed(2)
             })
+
+            await tsx.update(Account).set({
+                balance: newClearingBalance
+            }).where(eq(Account.id, clearing_account_id));
 
             await tsx.update(Account).set({
                 balance: remainingBalance

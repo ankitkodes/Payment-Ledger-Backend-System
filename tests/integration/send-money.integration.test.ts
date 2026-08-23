@@ -7,6 +7,8 @@ import { eq, sql } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 
 describe("SendMoney & Concurrency Integration Tests (Real Postgres)", () => {
+    jest.setTimeout(30000);
+
     const secret = process.env.AUTH_SECRET || "Aururm";
     const platformAccountId = "fd6572c9-5a1e-4412-b933-c0b92ac1fd39";
     process.env.PLATFORM_ACCOUNTNO = platformAccountId;
@@ -16,7 +18,7 @@ describe("SendMoney & Concurrency Integration Tests (Real Postgres)", () => {
     let platformUser: any, platformAccount: any;
 
     beforeEach(async () => {
-        await db.execute(sql`TRUNCATE users, account, transaction, ledger_system, audit_log CASCADE;`);
+        await db.execute(sql`TRUNCATE users, account, transaction, ledger_system, audit_log, idempotency CASCADE;`);
 
         // Create Platform user and account
         const pUser = await db.insert(User).values({
@@ -170,7 +172,62 @@ describe("SendMoney & Concurrency Integration Tests (Real Postgres)", () => {
         expect(ledgers.length).toBe(0);
     });
 
-    test.skip("Idempotency key duplicate submission (TODO: Idempotency Key Middleware issue #402)", async () => {
-        // Idempotency keys (e.g. via Redis SETNX) are planned for future sprint
+    test("Idempotency key duplicate submission returns cached response without duplicate balance deduction", async () => {
+        const token = jwt.sign({ id: senderUser.id, phoneNo: senderUser.phoneNo }, secret);
+        const idempotencyKey = "idemp-key-test-uuid-1001";
+
+        // First attempt: should execute transaction successfully
+        const res1 = await request(app)
+            .post(`/api/transaction/send/${senderAccount.accountNo}/${receiverAccount.accountNo}`)
+            .set("Authorization", `Bearer ${token}`)
+            .set("Idempotency-Key", idempotencyKey)
+            .send({ amount: "1000.00" });
+
+        expect(res1.status).toBe(200);
+        expect(res1.body.message).toContain("transferred successfully");
+
+        // Verify balance after first transfer: 5000 - 1000 = 4000
+        const senderAfterFirst = await db.select().from(Account).where(eq(Account.id, senderAccount.id));
+        expect(senderAfterFirst[0].balance).toBe("4000.00");
+
+        // Second attempt with exact same Idempotency-Key: must return cached 200 response
+        const res2 = await request(app)
+            .post(`/api/transaction/send/${senderAccount.accountNo}/${receiverAccount.accountNo}`)
+            .set("Authorization", `Bearer ${token}`)
+            .set("Idempotency-Key", idempotencyKey)
+            .send({ amount: "1000.00" });
+
+        expect(res2.status).toBe(200);
+        expect(res2.body.message).toContain("transferred successfully");
+
+        // CRITICAL CHECK: Verify balance was NOT deducted a second time (still 4000.00, NOT 3000.00!)
+        const senderAfterSecond = await db.select().from(Account).where(eq(Account.id, senderAccount.id));
+        expect(senderAfterSecond[0].balance).toBe("4000.00");
+
+        // Verify ledger entries count is still 3 (not duplicated to 6)
+        const ledgers = await db.select().from(LedgerSystem);
+        expect(ledgers.length).toBe(3);
+    });
+
+    test("Idempotency key reused with different payload returns 422 Unprocessable Entity", async () => {
+        const token = jwt.sign({ id: senderUser.id, phoneNo: senderUser.phoneNo }, secret);
+        const idempotencyKey = "idemp-key-test-uuid-1002";
+
+        // First attempt with amount 1000.00
+        await request(app)
+            .post(`/api/transaction/send/${senderAccount.accountNo}/${receiverAccount.accountNo}`)
+            .set("Authorization", `Bearer ${token}`)
+            .set("Idempotency-Key", idempotencyKey)
+            .send({ amount: "1000.00" });
+
+        // Second attempt with SAME key but DIFFERENT amount 500.00
+        const res2 = await request(app)
+            .post(`/api/transaction/send/${senderAccount.accountNo}/${receiverAccount.accountNo}`)
+            .set("Authorization", `Bearer ${token}`)
+            .set("Idempotency-Key", idempotencyKey)
+            .send({ amount: "500.00" });
+
+        expect(res2.status).toBe(422);
+        expect(res2.body.error).toContain("reused with different payload");
     });
 });

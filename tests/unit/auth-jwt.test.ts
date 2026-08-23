@@ -95,7 +95,9 @@ describe("JWT & Authentication Middleware Unit Tests", () => {
 
         authenticate(req, res, next);
 
-        expect(res.status).toHaveBeenCalledWith(500);
-        expect(res.json).toHaveBeenCalledWith({ message: "authentication secret not configured" });
+        expect(next).toHaveBeenCalled();
+        const err = next.mock.calls[0][0];
+        expect(err.statusCode).toBe(500);
+        expect(err.message).toBe("authentication secret not configured");
     });
 });

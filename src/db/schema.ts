@@ -1,8 +1,16 @@
-import { index } from "drizzle-orm/pg-core";
-import { json } from "drizzle-orm/pg-core";
-import { numeric } from "drizzle-orm/pg-core";
-import { pgEnum, uuid } from "drizzle-orm/pg-core";
-import { integer, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import {
+    index,
+    integer,
+    json,
+    numeric,
+    pgEnum,
+    pgTable,
+    text,
+    timestamp,
+    uniqueIndex,
+    uuid,
+    varchar
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 
 
@@ -72,6 +80,21 @@ export const Audit_log = pgTable("audit_log", {
     created_at: timestamp('created_at').defaultNow()
 })
 
+export const Idempotency = pgTable("idempotency", {
+    id: uuid('id').primaryKey().defaultRandom(),
+    idempotency_key: varchar({ length: 255 }).notNull().unique(),
+    user_id: uuid('user_id').references(() => User.id).notNull(),
+    request_hash: varchar({ length: 255 }).notNull(),
+    status: StatusEnum().default("Pending"),
+    response_status: integer("response_status").default(200),
+    response_body: json().notNull(),
+    created_at: timestamp('created_at').defaultNow(),
+    expiry_at: timestamp('expiry_at').notNull(),
+}, (table) => [
+    index('idempotency_key').on(table.idempotency_key.asc()),
+    index('user_id').on(table.user_id.asc()),
+    index('request_hash').on(table.request_hash.asc()),
+])
 
 // type of all table
 
